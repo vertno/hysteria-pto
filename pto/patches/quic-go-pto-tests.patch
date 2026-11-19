@@ -1,0 +1,153 @@
+diff --git a/internal/ackhandler/sent_packet_handler_test.go b/internal/ackhandler/sent_packet_handler_test.go
+index 741bcd0..ef0192e 100644
+--- a/internal/ackhandler/sent_packet_handler_test.go
++++ b/internal/ackhandler/sent_packet_handler_test.go
+@@ -972,7 +972,7 @@ func testSentPacketHandlerPTO(t *testing.T, encLevel protocol.EncryptionLevel, p
+ 		sph.DropPackets(protocol.EncryptionHandshake, monotime.Now())
+ 	}
+ 
+-	sendPacket := func(t *testing.T, ti monotime.Time, ackEliciting bool, ptoCount uint) protocol.PacketNumber {
++	sendPacket := func(t *testing.T, ti monotime.Time, ackEliciting bool) protocol.PacketNumber {
+ 		t.Helper()
+ 
+ 		pn := sph.PopPacketNumber(encLevel.PacketNumberSpace())
+@@ -984,7 +984,7 @@ func testSentPacketHandlerPTO(t *testing.T, encLevel protocol.EncryptionLevel, p
+ 						Type:      qlog.TimerEventTypeSet,
+ 						TimerType: qlog.TimerTypePTO,
+ 						EncLevel:  encLevel,
+-						Time:      ti.ToTime().Add(rttStats.PTO(encLevel == protocol.Encryption1RTT) << ptoCount),
++						Time:      ti.ToTime().Add(rttStats.PTO(encLevel == protocol.Encryption1RTT)),
+ 					},
+ 				},
+ 				eventRecorder.Events(qlog.TimerUpdated{}),
+@@ -1007,9 +1007,9 @@ func testSentPacketHandlerPTO(t *testing.T, encLevel protocol.EncryptionLevel, p
+ 	var pns []protocol.PacketNumber
+ 	// send packet 0, 1, 2, 3
+ 	for i := range 3 {
+-		pns = append(pns, sendPacket(t, sendTimes[i], true, 0))
++		pns = append(pns, sendPacket(t, sendTimes[i], true))
+ 	}
+-	pns = append(pns, sendPacket(t, sendTimes[3], false, 0))
++	pns = append(pns, sendPacket(t, sendTimes[3], false))
+ 
+ 	// The PTO includes the max_ack_delay only for the application-data packet number space.
+ 	// Make sure that the value is actually different, so this test is meaningful.
+@@ -1029,12 +1029,6 @@ func testSentPacketHandlerPTO(t *testing.T, encLevel protocol.EncryptionLevel, p
+ 				EncLevel:  encLevel,
+ 			},
+ 			qlog.PTOCountUpdated{PTOCount: 1},
+-			qlog.TimerUpdated{
+-				Type:      qlog.TimerEventTypeSet,
+-				TimerType: qlog.TimerTypePTO,
+-				EncLevel:  encLevel,
+-				Time:      sendTimes[2].Add(2 * rttStats.PTO(encLevel == protocol.Encryption1RTT)).ToTime(),
+-			},
+ 		},
+ 		eventRecorder.Events(qlog.PTOCountUpdated{}, qlog.TimerUpdated{}),
+ 	)
+@@ -1062,16 +1056,16 @@ func testSentPacketHandlerPTO(t *testing.T, encLevel protocol.EncryptionLevel, p
+ 	sendTimes = append(sendTimes, now.Add(200*time.Millisecond))
+ 	sendTimes = append(sendTimes, now.Add(300*time.Millisecond))
+ 	require.Equal(t, ptoMode, sph.SendMode(sendTimes[4])) // first probe packet
+-	pns = append(pns, sendPacket(t, sendTimes[4], true, 1))
++	pns = append(pns, sendPacket(t, sendTimes[4], true))
+ 	require.Equal(t, ptoMode, sph.SendMode(sendTimes[5])) // next probe packet
+-	pns = append(pns, sendPacket(t, sendTimes[5], false, 1))
++	pns = append(pns, sendPacket(t, sendTimes[5], false))
+ 	require.Equal(t, ptoMode, sph.SendMode(sendTimes[6])) // non-ack-eliciting packet didn't count as a probe packet
+-	pns = append(pns, sendPacket(t, sendTimes[6], true, 1))
++	pns = append(pns, sendPacket(t, sendTimes[6], true))
+ 	require.Equal(t, SendAny, sph.SendMode(sendTimes[6])) // enough probe packets sent
+ 
+ 	timeout = sph.GetLossDetectionTimeout()
+-	// exponential backoff
+-	require.Equal(t, sendTimes[6].Add(2*rttStats.PTO(encLevel == protocol.Encryption1RTT)), timeout)
++	// The first timeout does not extend the probe wait.
++	require.Equal(t, sendTimes[6].Add(rttStats.PTO(encLevel == protocol.Encryption1RTT)), timeout)
+ 	now = timeout
+ 
+ 	sph.OnLossDetectionTimeout(timeout)
+@@ -1083,12 +1077,6 @@ func testSentPacketHandlerPTO(t *testing.T, encLevel protocol.EncryptionLevel, p
+ 				EncLevel:  encLevel,
+ 			},
+ 			qlog.PTOCountUpdated{PTOCount: 2},
+-			qlog.TimerUpdated{
+-				Type:      qlog.TimerEventTypeSet,
+-				TimerType: qlog.TimerTypePTO,
+-				EncLevel:  encLevel,
+-				Time:      sendTimes[6].Add(4 * rttStats.PTO(encLevel == protocol.Encryption1RTT)).ToTime(),
+-			},
+ 		},
+ 		eventRecorder.Events(qlog.TimerUpdated{}, qlog.PTOCountUpdated{}),
+ 	)
+@@ -1100,15 +1088,15 @@ func testSentPacketHandlerPTO(t *testing.T, encLevel protocol.EncryptionLevel, p
+ 	sendTimes = append(sendTimes, now.Add(100*time.Millisecond))
+ 	sendTimes = append(sendTimes, now.Add(200*time.Millisecond))
+ 	require.Equal(t, ptoMode, sph.SendMode(sendTimes[7])) // first probe packet
+-	pns = append(pns, sendPacket(t, sendTimes[7], true, 2))
++	pns = append(pns, sendPacket(t, sendTimes[7], true))
+ 	require.Equal(t, ptoMode, sph.SendMode(sendTimes[8])) // next probe packet
+-	pns = append(pns, sendPacket(t, sendTimes[8], true, 2))
++	pns = append(pns, sendPacket(t, sendTimes[8], true))
+ 	require.Equal(t, SendAny, sph.SendMode(sendTimes[8])) // enough probe packets sent
+ 
+ 	timeout = sph.GetLossDetectionTimeout()
+ 
+-	// exponential backoff, again
+-	require.Equal(t, sendTimes[8].Add(4*rttStats.PTO(encLevel == protocol.Encryption1RTT)), timeout)
++	// A second timeout still uses one base PTO.
++	require.Equal(t, sendTimes[8].Add(rttStats.PTO(encLevel == protocol.Encryption1RTT)), timeout)
+ 
+ 	eventRecorder.Clear()
+ 
+@@ -1223,8 +1211,8 @@ func TestSentPacketHandlerPacketNumberSpacesPTO(t *testing.T) {
+ 
+ 	// the earliest PTO time is now the 2nd Handshake packet
+ 	timeout = sph.GetLossDetectionTimeout()
+-	// pto_count is a global property, so there's now an exponential backoff
+-	require.Equal(t, handshakeTimes[1].Add(2*rttStats.PTO(false)), timeout)
++	// An Initial timeout does not extend the wait in the Handshake space.
++	require.Equal(t, handshakeTimes[1].Add(rttStats.PTO(false)), timeout)
+ 	sph.OnLossDetectionTimeout(timeout)
+ 	require.Equal(t, SendPTOHandshake, sph.SendMode(timeout))
+ 	// send a PTO probe packet (Handshake)
+@@ -1234,7 +1222,7 @@ func TestSentPacketHandlerPacketNumberSpacesPTO(t *testing.T) {
+ 
+ 	// the earliest PTO time is now the 3rd Initial packet
+ 	timeout = sph.GetLossDetectionTimeout()
+-	require.Equal(t, initialTimes[2].Add(4*rttStats.PTO(false)), timeout)
++	require.Equal(t, initialTimes[2].Add(rttStats.PTO(false)), timeout)
+ 	sph.OnLossDetectionTimeout(timeout)
+ 	require.Equal(t, SendPTOInitial, sph.SendMode(timeout))
+ 
+diff --git a/internal/utils/rtt_stats_test.go b/internal/utils/rtt_stats_test.go
+index 6277db3..cececc3 100644
+--- a/internal/utils/rtt_stats_test.go
++++ b/internal/utils/rtt_stats_test.go
+@@ -65,9 +65,14 @@ func TestRTTStatsComputePTO(t *testing.T) {
+ 	rttStats.SetMaxAckDelay(maxAckDelay)
+ 	rttStats.UpdateRTT(rtt, 0)
+ 	require.Equal(t, rtt, rttStats.SmoothedRTT())
+-	require.Equal(t, rtt/2, rttStats.MeanDeviation())
+-	require.Equal(t, rtt+4*(rtt/2), rttStats.PTO(false))
+-	require.Equal(t, rtt+4*(rtt/2)+maxAckDelay, rttStats.PTO(true))
++	require.Equal(t, rtt/4, rttStats.MeanDeviation())
++	require.Equal(t, rtt+rtt/4, rttStats.PTO(false))
++	require.Equal(t, rtt+rtt/4+maxAckDelay, rttStats.PTO(true))
++
++	// A second identical sample retains three quarters of the first deviation.
++	rttStats.UpdateRTT(rtt, 0)
++	require.Equal(t, 3*rtt/16, rttStats.MeanDeviation())
++	require.Equal(t, rtt+3*rtt/16+maxAckDelay, rttStats.PTO(true))
+ }
+ 
+ func TestRTTStatsPTOWithShortRTT(t *testing.T) {
+@@ -106,7 +111,7 @@ func TestRTTStatsRestore(t *testing.T) {
+ 	rttStats.UpdateRTT(200*time.Millisecond, 0)
+ 	require.Equal(t, 200*time.Millisecond, rttStats.LatestRTT())
+ 	require.Equal(t, 200*time.Millisecond, rttStats.SmoothedRTT())
+-	require.Equal(t, 100*time.Millisecond, rttStats.MeanDeviation())
++	require.Equal(t, 50*time.Millisecond, rttStats.MeanDeviation())
+ }
+ 
+ func TestRTTMeasurementAfterRestore(t *testing.T) {

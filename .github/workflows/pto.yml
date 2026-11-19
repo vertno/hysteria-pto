@@ -1,0 +1,59 @@
+name: Build PTO edition
+on:
+  workflow_dispatch:
+  push:
+    branches: [pto]
+    tags: ['pto-v*']
+  pull_request:
+    branches: [pto]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        with:
+          go-version-file: pto/go-version
+          cache-dependency-path: |
+            app/go.sum
+            core/go.sum
+            extras/go.sum
+      - name: Fetch release labels from upstream
+        run: git fetch --quiet --no-tags https://github.com/apernet/hysteria.git 'refs/tags/app/v*:refs/tags/app/v*'
+      - run: bash pto/build.sh "$RUNNER_TEMP/artifact"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: hysteria-pto-linux-amd64
+          path: ${{ runner.temp }}/artifact/
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/pto-v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: hysteria-pto-linux-amd64
+          path: artifact
+      - name: Verify and attach the tested files to a draft release
+        working-directory: artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          sha256sum --check SHA256SUMS
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --title "$RELEASE_TAG" --notes-file build-info.txt \
+            hysteria-pto-linux-amd64 SHA256SUMS build-info.txt modules.txt version.txt

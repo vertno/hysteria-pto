@@ -1,5 +1,7 @@
 # ![Hysteria 2](logo.svg)
 
+**PTO edition** · [修改说明、在线编译与上游升级指南](pto/README.md) · [GitHub Actions](https://github.com/vertno/hysteria-pto/actions/workflows/pto.yml)
+
 [![License][1]][2] [![Release][3]][4] [![Telegram][5]][6] [![Discussions][7]][8]
 
 [1]: https://img.shields.io/badge/license-MIT-blue

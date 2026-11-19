@@ -1,0 +1,44 @@
+diff --git a/internal/ackhandler/sent_packet_handler.go b/internal/ackhandler/sent_packet_handler.go
+index 2dd4e93..83bd179 100644
+--- a/internal/ackhandler/sent_packet_handler.go
++++ b/internal/ackhandler/sent_packet_handler.go
+@@ -27,7 +27,7 @@ const (
+ 	amplificationFactor = 3
+ 	// We use Retry packets to derive an RTT estimate. Make sure we don't set the RTT to a super low value yet.
+ 	minRTTAfterRetry = 5 * time.Millisecond
+-	// The PTO duration uses exponential backoff, but is truncated to a maximum value, as allowed by RFC 8961, section 4.4.
++	// Probe waits use the base PTO on every timeout and retain the maximum duration.
+ 	maxPTODuration = 60 * time.Second
+ )
+ 
+@@ -769,7 +769,7 @@ func (h *sentPacketHandler) getLossTimeAndSpace() (monotime.Time, protocol.Encry
+ }
+ 
+ func (h *sentPacketHandler) getScaledPTO(includeMaxAckDelay bool) time.Duration {
+-	pto := h.rttStats.PTO(includeMaxAckDelay) << h.ptoCount
++	pto := h.rttStats.PTO(includeMaxAckDelay)
+ 	if pto > maxPTODuration || pto <= 0 {
+ 		return maxPTODuration
+ 	}
+diff --git a/internal/utils/rtt_stats.go b/internal/utils/rtt_stats.go
+index 4ea7b3b..c4a9bf4 100644
+--- a/internal/utils/rtt_stats.go
++++ b/internal/utils/rtt_stats.go
+@@ -70,7 +70,7 @@ func (r *RTTStats) PTO(includeMaxAckDelay bool) time.Duration {
+ 	if !r.hasMeasurement {
+ 		return 2 * DefaultInitialRTT
+ 	}
+-	pto := r.SmoothedRTT() + max(4*r.MeanDeviation(), protocol.TimerGranularity)
++	pto := r.SmoothedRTT() + max(r.MeanDeviation(), protocol.TimerGranularity)
+ 	if includeMaxAckDelay {
+ 		pto += r.MaxAckDelay()
+ 	}
+@@ -105,7 +105,7 @@ func (r *RTTStats) UpdateRTT(sendDelta, ackDelay time.Duration) {
+ 	if !r.hasMeasurement {
+ 		r.hasMeasurement = true
+ 		r.smoothedRTT.Store(sample.Nanoseconds())
+-		r.meanDeviation.Store(sample.Nanoseconds() / 2)
++		r.meanDeviation.Store(sample.Nanoseconds() / 4)
+ 	} else {
+ 		smoothedRTT := r.SmoothedRTT()
+ 		meanDev := time.Duration(oneMinusBeta*float32(r.MeanDeviation()/time.Microsecond)+rttBeta*float32((smoothedRTT-sample).Abs()/time.Microsecond)) * time.Microsecond
