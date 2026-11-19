@@ -39,7 +39,8 @@ test "$(realpath "$checked_dir")" = "$tmp/quic-go"
 go test -count=1 "$module/internal/utils" "$module/internal/ackhandler"
 
 commit=$(git -C "$root" rev-parse HEAD)
-base=$(git -C "$root" describe --tags --abbrev=0 --match 'app/v*')
+base=${PTO_UPSTREAM_TAG:-$(git -C "$root" describe --tags --abbrev=0 --match 'app/v*')}
+git -C "$root" merge-base --is-ancestor "$base^{commit}" HEAD
 stamp=$(git -C "$root" show -s --format=%cI HEAD)
 toolchain=$(go env GOVERSION)
 pkg="$app/cmd"

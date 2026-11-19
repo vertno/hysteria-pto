@@ -16,20 +16,17 @@
 2. 打开已成功的运行，在 **Artifacts** 下载 `hysteria-pto-linux-amd64`。解压后执行 `sha256sum -c SHA256SUMS`。GitHub 的工作流压缩包会丢失 Unix 可执行位，使用前执行 `chmod +x hysteria-pto-linux-amd64`。
 3. 运行 `./hysteria-pto-linux-amd64 version` 可查看源码提交和版本。`build-info.txt` 记录官方版本、实际 QUIC 依赖、Go 版本和补丁摘要，`modules.txt` 记录最终链接的 Go 模块。
 
-工作流产物保留 30 天。想长期保留某个通过测试的版本，可以给 `pto` 上选好的提交打专用标签，例如 `git tag pto-v2.14.0-1` 并执行 `git push origin pto-v2.14.0-1`。工作流会针对标签重新测试、编译，校验后将**同一份二进制**和清单放入一个 Release 草稿。确认后在 GitHub 点 **Publish release** 即可公开下载。回退时可从先前发布的 Release 取回该版二进制并核对摘要。[GitHub 手动运行说明](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
+工作流产物保留 30 天。正式版本另存于仓库的 [Releases](https://github.com/vertno/hysteria-pto/releases)，可以长期下载。
 
-## 跟进官方稳定版
+## 自动跟进官方稳定版
 
-日常开发使用 `pto` 分支。可以在上游仓库点击 **Watch → Custom → Releases** 订阅正式版本。收到新版通知后，在本仓库的完整 Git 克隆中执行以下命令。把示例版本替换为上游已经发布的实际标签。
+在本仓库选择 **Watch → Custom → Releases**，即可订阅自己的修改版。GitHub Actions 每六小时检查一次官方已公开的 Hysteria 2 正式版，从中选出版本号最高的一个。新版本发布到分支的检查可能因 GitHub 排队稍有延迟。可以在 [Publish official stable updates](https://github.com/vertno/hysteria-pto/actions/workflows/stable.yml) 点 **Run workflow** 立即检查。
 
-```bash
-git switch pto
-git pull --ff-only origin pto
-bash pto/update.sh app/v2.14.1
-git push -u origin update/v2.14.1
-```
+工作流在临时分支合并官方 Release 对应的提交，保留本仓库的构建脚本和工作流。它按新源码的要求选择 Go 版本，核对 QUIC 模块校验和，应用两份补丁，运行 RTT 与丢包恢复测试，最后用编好的两个 HY2 进程在本机回环上传 128 KiB 随机数据并核对回执。全部通过后才推进 `pto`、创建版本标签、上传 Linux amd64 程序和校验清单；GitHub 端的附件摘要核对通过后才公开发布。
 
-脚本先从官方仓库获取指定标签；当前分支已经包含该版本时直接退出。发现新版本则在独立分支合并相应提交。接着在**自己的 fork** 创建 PR，目标设为 `pto`。审查 QUIC 更新、补丁和构建结果，使用 **Create a merge commit** 合并，保留官方提交的祖先关系。如果上游改变了相关代码，导致补丁无法应用或测试未通过，工作流会失败并显示出错的位置。即使测试通过，升级 QUIC 时也应检查上游是否改变了超时算法的调用方式。未来上游要求更高的 Go 版本时，同一 PR 更新 `pto/go-version`。
+发布标签形如 `pto-v2.14.0-1`。重复检查已发布版本会跳过编译。源码合并、补丁或测试失败时，上一份公开版本继续可用；在自动发布记录里可查看原因。上传途中失败时，下一次会用同一标签重试并补齐草稿。需要人工解决合并冲突时，维护者可用 `bash pto/update.sh app/vX.Y.Z` 准备更新分支。
+
+GitHub 会暂停长期无仓库活动的公开项目的定时任务。若已有版本持续 35 天以上，工作流会在独立的 `automation/stable-check` 分支记录一次活动，保持定时检查，不产生新 Release。[GitHub 定时任务说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
 
 ## 本地构建
 
