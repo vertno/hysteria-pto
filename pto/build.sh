@@ -37,6 +37,12 @@ app=github.com/apernet/hysteria/app/v2
 checked_dir=$(go list -deps -f '{{if eq .ImportPath "github.com/apernet/quic-go"}}{{.Dir}}{{end}}' "$app" | sed '/^$/d')
 test "$(realpath "$checked_dir")" = "$tmp/quic-go"
 go test -count=1 "$module/internal/utils" "$module/internal/ackhandler"
+if [[ ${PTO_FULL_TESTS:-0} == 1 ]]; then
+    echo 'Running upstream core, extras and app suites with the patched QUIC dependency'
+    go test -count=1 -timeout=5m github.com/apernet/hysteria/core/v2/...
+    go test -count=1 github.com/apernet/hysteria/extras/v2/...
+    go test -count=1 "$app/..."
+fi
 
 commit=$(git -C "$root" rev-parse HEAD)
 base=${PTO_UPSTREAM_TAG:-$(git -C "$root" describe --tags --abbrev=0 --match 'app/v*')}

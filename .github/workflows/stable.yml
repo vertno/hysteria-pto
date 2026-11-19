@@ -43,10 +43,13 @@ jobs:
             app/go.sum
             core/go.sum
             extras/go.sum
+      - if: steps.plan.outputs.build == 'true'
+        uses: ./pto/ci
       - name: Build, test and exercise the built binary over loopback
         if: steps.plan.outputs.build == 'true'
         env:
           PTO_UPSTREAM_TAG: ${{ steps.plan.outputs.stable }}
+          PTO_FULL_TESTS: '1'
         run: |
           out="$RUNNER_TEMP/release-files"
           bash pto/build.sh "$out"

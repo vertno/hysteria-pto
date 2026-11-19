@@ -28,7 +28,12 @@ jobs:
             extras/go.sum
       - name: Fetch release labels from upstream
         run: git fetch --quiet --no-tags https://github.com/apernet/hysteria.git 'refs/tags/app/v*:refs/tags/app/v*'
-      - run: bash pto/build.sh "$RUNNER_TEMP/artifact"
+      - uses: ./pto/ci
+      - env:
+          PTO_FULL_TESTS: '1'
+        run: |
+          bash pto/build.sh "$RUNNER_TEMP/artifact"
+          bash pto/smoke.sh "$RUNNER_TEMP/artifact/hysteria-pto-linux-amd64"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: hysteria-pto-linux-amd64

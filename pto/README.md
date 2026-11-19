@@ -30,6 +30,8 @@ GitHub 会暂停长期无仓库活动的公开项目的定时任务。若已有�
 
 ## 本地构建
 
+持续集成沿用官方测试流程的格式检查和三组 Go 测试：核心传输 `core`、扩展功能 `extras`、命令行及代理入口 `app`。三组都在已替换 QUIC 依赖的 Go 工作区内运行。Python 辅助程序使用上游 `uv.lock` 中的依赖。另外单独运行 QUIC 定时器回归测试和编译产物的回环传输测试。官方针对多个系统与架构打包，本分支发布部署使用的 Linux amd64 程序。[上游测试流程](https://github.com/HyNetworks/hysteria/blob/app/v2.14.0/.github/workflows/test.yml) · [上游构建流程](https://github.com/HyNetworks/hysteria/blob/app/v2.14.0/.github/workflows/build-common.yml)
+
 在 Linux x86-64 上安装 `pto/go-version` 指定的 Go，以及 Git、Bash、Python 3 和 GNU coreutils。在干净的完整克隆中运行：
 
 ```bash
