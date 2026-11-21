@@ -39,13 +39,13 @@ class Sink(BaseHTTPRequestHandler):
 HTTPServer(('127.0.0.1', 24895), Sink).serve_forever()
 PY
 pids+=("$!")
-"$binary" server -c server.yaml --log-format json >server.log 2>&1 & pids+=("$!")
+"$binary" server -c server.yaml --log-format json --disable-update-check >server.log 2>&1 & pids+=("$!")
 for _ in {1..100}; do
     kill -0 "${pids[1]}"
     if grep -q 'server up and running' server.log; then break; fi
     sleep .1
 done
-"$binary" client -c client.yaml >client.log 2>&1 & pids+=("$!")
+"$binary" client -c client.yaml --disable-update-check >client.log 2>&1 & pids+=("$!")
 head -c 131072 /dev/urandom > body
 actual=$(curl --noproxy '*' --fail --silent --show-error --retry 12 --retry-connrefused \
     --retry-delay 1 --retry-max-time 20 --max-time 5 --data-binary @body http://127.0.0.1:24894/) || {

@@ -18,6 +18,8 @@
 
 PTO 补丁和连接日志扩展都由本仓库维护。部署更新应下载本仓库正式 Release，并核对 `SHA256SUMS`、`version.txt` 与 `build-info.txt`；上游原版二进制不包含这些扩展。
 
+本分支也修复了共享 HTTP/SOCKS 监听器的注册唤醒问题：管理循环先开始等待、协议稍后注册时，关闭子监听器仍能及时释放底层监听端口。验收脚本在客户端和服务端均关闭更新检查，避免后台更新请求混入回环连接日志。
+
 1. 进入 **Actions → Build PTO edition → Run workflow**，选择 `pto` 分支。向该分支推送提交、向它发起拉取请求，也会触发同一套测试和构建。
 2. 打开已成功的运行，在 **Artifacts** 下载 `hysteria-pto-linux-amd64`。解压后执行 `sha256sum -c SHA256SUMS`。GitHub 的工作流压缩包会丢失 Unix 可执行位，使用前执行 `chmod +x hysteria-pto-linux-amd64`。
 3. 运行 `./hysteria-pto-linux-amd64 version` 可查看源码提交和版本。`build-info.txt` 记录官方版本、实际 QUIC 依赖、Go 版本和补丁摘要，`modules.txt` 记录最终链接的 Go 模块。
