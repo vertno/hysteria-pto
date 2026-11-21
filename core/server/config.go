@@ -39,6 +39,7 @@ type Config struct {
 	UDPIdleTimeout        time.Duration
 	Authenticator         Authenticator
 	EventLogger           EventLogger
+	TCPConnectionLogger   TCPConnectionLogger
 	TrafficLogger         TrafficLogger
 	MasqHandler           http.Handler
 }

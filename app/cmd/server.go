@@ -92,6 +92,7 @@ type serverConfig struct {
 	ACL                   serverConfigACL             `mapstructure:"acl"`
 	Outbounds             []serverConfigOutboundEntry `mapstructure:"outbounds"`
 	TrafficStats          serverConfigTrafficStats    `mapstructure:"trafficStats"`
+	ConnectionAudit       bool                        `mapstructure:"connectionAudit"`
 	Masquerade            serverConfigMasquerade      `mapstructure:"masquerade"`
 }
 
@@ -1508,6 +1509,9 @@ func (c *serverConfig) fillAuthenticator(hyConfig *server.Config) error {
 
 func (c *serverConfig) fillEventLogger(hyConfig *server.Config) error {
 	hyConfig.EventLogger = &serverLogger{}
+	if c.ConnectionAudit {
+		hyConfig.TCPConnectionLogger = &tcpConnectionLogger{}
+	}
 	return nil
 }
 

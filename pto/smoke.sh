@@ -17,6 +17,7 @@ cat > server.yaml <<'EOF'
 listen: 127.0.0.1:24893
 tls: {cert: cert.pem, key: key.pem}
 auth: {type: password, password: loopback-test}
+connectionAudit: true
 EOF
 cat > client.yaml <<'EOF'
 server: 127.0.0.1:24893
@@ -38,7 +39,7 @@ class Sink(BaseHTTPRequestHandler):
 HTTPServer(('127.0.0.1', 24895), Sink).serve_forever()
 PY
 pids+=("$!")
-"$binary" server -c server.yaml >server.log 2>&1 & pids+=("$!")
+"$binary" server -c server.yaml --log-format json >server.log 2>&1 & pids+=("$!")
 for _ in {1..100}; do
     kill -0 "${pids[1]}"
     if grep -q 'server up and running' server.log; then break; fi
@@ -51,4 +52,21 @@ actual=$(curl --noproxy '*' --fail --silent --show-error --retry 12 --retry-conn
     cat server.log client.log >&2; exit 1;
 }
 test "$actual" = "$(sha256sum body | cut -d' ' -f1)"
+python3 - <<'PY'
+import json, time
+from pathlib import Path
+for _ in range(50):
+    events = [json.loads(line) for line in Path('server.log').read_text().splitlines()]
+    events = [e for e in events if e.get('schema') == 'hy2-flow-v1']
+    if any(e['event'] == 'close' for e in events):
+        break
+    time.sleep(.1)
+assert len(events) == 2, events
+assert [e['event'] for e in events] == ['open', 'close'], events
+assert events[0]['flow_id'] == events[1]['flow_id'], events
+assert events[0]['remote_addr'] == '127.0.0.1:24895', events
+assert events[0]['client_addr'].startswith('127.0.0.1:'), events
+assert events[0]['local_addr'].startswith('127.0.0.1:'), events
+assert not any('auth' in k or 'password' in k for e in events for k in e), events
+PY
 echo 'Loopback HY2 handshake and 128 KiB upload passed.'

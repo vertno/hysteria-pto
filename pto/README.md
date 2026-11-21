@@ -12,6 +12,12 @@
 
 ## 在线编译与下载
 
+服务端可选 `connectionAudit: true`，配合 `--log-format json` 输出 `hy2-flow-v1` 连接记录。默认关闭。每次成功建立 TCP 出站连接时记录一条 `open`，转发结束时记录一条 `close`。两条记录共用随机 `flow_id`，包含建立时的 QUIC 客户端与服务端地址、出站 TCP 的本地与远端地址、QUIC 连接编号、流编号和建立时间；结束记录另含持续时间及复制循环是否以错误结束。正常对端关闭也可能使复制循环返回错误，该字段不能单独解释为业务失败。
+
+这项功能用于把 QUIC 客户端地址对应到后续 TCP 服务看到的源端口。它不记录认证身份、请求路径或数据内容，也不改变原有数据复制路径。客户端地址是建立出站连接时的快照，不是 QUIC 地址迁移历史；自定义出站如果包装或复用套接字，地址含义取决于该出站提供的 `LocalAddr` 和 `RemoteAddr`。日志回调同步执行，输出设备应及时消费日志，并配置访问权限、保留容量和轮换。
+
+PTO 补丁和连接日志扩展都由本仓库维护。部署更新应下载本仓库正式 Release，并核对 `SHA256SUMS`、`version.txt` 与 `build-info.txt`；上游原版二进制不包含这些扩展。
+
 1. 进入 **Actions → Build PTO edition → Run workflow**，选择 `pto` 分支。向该分支推送提交、向它发起拉取请求，也会触发同一套测试和构建。
 2. 打开已成功的运行，在 **Artifacts** 下载 `hysteria-pto-linux-amd64`。解压后执行 `sha256sum -c SHA256SUMS`。GitHub 的工作流压缩包会丢失 Unix 可执行位，使用前执行 `chmod +x hysteria-pto-linux-amd64`。
 3. 运行 `./hysteria-pto-linux-amd64 version` 可查看源码提交和版本。`build-info.txt` 记录官方版本、实际 QUIC 依赖、Go 版本和补丁摘要，`modules.txt` 记录最终链接的 Go 模块。
