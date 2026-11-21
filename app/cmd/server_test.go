@@ -24,7 +24,8 @@ func TestServerConfig(t *testing.T) {
 	assert.NoError(t, err)
 	assertAllFieldsSet(t, config, "server")
 	assert.Equal(t, config, serverConfig{
-		Listen: ":8443",
+		Listen:          ":8443",
+		ConnectionAudit: true,
 		Realm: serverConfigRealm{
 			STUNServers:       []string{"stun1.example.com:3478", "stun2.example.com:3478"},
 			STUNTimeout:       6 * time.Second,

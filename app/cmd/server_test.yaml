@@ -1,4 +1,5 @@
 listen: :8443
+connectionAudit: true
 
 realm:
   stunServers:
