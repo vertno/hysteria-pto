@@ -26,7 +26,31 @@ func TestUDPSessionManager(t *testing.T) {
 		return m, nil
 	})
 
-	go sm.Run()
+	runDone := make(chan struct{})
+	go func() {
+		sm.Run()
+		close(runDone)
+	}()
+	closed := make(chan uint32, 4)
+	waitClosed := func(ids ...uint32) {
+		t.Helper()
+		pending := make(map[uint32]bool, len(ids))
+		for _, id := range ids {
+			pending[id] = true
+		}
+		timer := time.NewTimer(5 * time.Second)
+		defer timer.Stop()
+		for len(pending) > 0 {
+			select {
+			case id := <-closed:
+				assert.True(t, pending[id], "unexpected closed session %d", id)
+				delete(pending, id)
+			case <-timer.C:
+				t.Fatalf("sessions did not close: %v", pending)
+			}
+		}
+	}
+	onClose := func(args mock.Arguments) { closed <- args.Get(0).(uint32) }
 
 	udpReadFunc := func(addr string, ch chan []byte, b []byte) (int, string, error) {
 		bs := <-ch
@@ -135,10 +159,12 @@ func TestUDPSessionManager(t *testing.T) {
 		close(udpConn2Ch)
 		return nil
 	}).Once()
-	eventLogger.EXPECT().Close(msg1.SessionID, nil).Once()
-	eventLogger.EXPECT().Close(msg2_1.SessionID, nil).Once()
+	eventLogger.EXPECT().Close(msg1.SessionID, nil).Call.Run(onClose).Once()
+	eventLogger.EXPECT().Close(msg2_1.SessionID, nil).Call.Run(onClose).Once()
 
-	time.Sleep(3 * time.Second) // Wait for timeout
+	// Cleanup polls every second and requires idle time strictly greater than
+	// two seconds. Waiting exactly three seconds races the third cleanup tick.
+	waitClosed(msg1.SessionID, msg2_1.SessionID)
 	mock.AssertExpectationsForObjects(t, io, eventLogger, udpConn1, udpConn2)
 
 	// Test UDP connection close error propagation
@@ -158,10 +184,10 @@ func TestUDPSessionManager(t *testing.T) {
 	udpConn4.EXPECT().WriteTo(msg4.Data, msg4.Addr).Return(12, nil).Once()
 	udpConn4.EXPECT().ReadFrom(mock.Anything).Return(0, "", errUDPClosed).Once()
 	udpConn4.EXPECT().Close().Return(nil).Once()
-	eventLogger.EXPECT().Close(msg4.SessionID, errUDPClosed).Once()
+	eventLogger.EXPECT().Close(msg4.SessionID, errUDPClosed).Call.Run(onClose).Once()
 	msgCh <- msg4
 
-	time.Sleep(1 * time.Second)
+	waitClosed(msg4.SessionID)
 	mock.AssertExpectationsForObjects(t, io, eventLogger, udpConn4)
 
 	// Test UDP connection creation error propagation
@@ -177,15 +203,19 @@ func TestUDPSessionManager(t *testing.T) {
 	eventLogger.EXPECT().New(msg5.SessionID, msg5.Addr).Return().Once()
 	io.EXPECT().Hook([][]byte{msg5.Data}, &msg5.Addr).Return(true, nil).Once()
 	io.EXPECT().UDP(msg5.Addr).Return(nil, errUDPIO).Once()
-	eventLogger.EXPECT().Close(msg5.SessionID, errUDPIO).Once()
+	eventLogger.EXPECT().Close(msg5.SessionID, errUDPIO).Call.Run(onClose).Once()
 	msgCh <- msg5
 
-	time.Sleep(1 * time.Second)
+	waitClosed(msg5.SessionID)
 	mock.AssertExpectationsForObjects(t, io, eventLogger)
 
 	// Leak checks
-	close(msgCh)                // This will return error from ReceiveMessage(), should stop the session manager
-	time.Sleep(1 * time.Second) // Wait one more second just to be sure
+	close(msgCh) // This returns an error from ReceiveMessage and stops the manager.
+	select {
+	case <-runDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("session manager did not stop")
+	}
 	assert.Zero(t, sm.Count(), "session count should be 0")
 	goleak.VerifyNone(t)
 }
