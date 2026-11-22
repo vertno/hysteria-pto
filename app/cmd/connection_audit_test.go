@@ -12,12 +12,18 @@ import (
 )
 
 func TestConnectionAuditOptIn(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		c := serverConfig{ConnectionAudit: enabled}
-		s := &server.Config{}
-		require.NoError(t, c.fillEventLogger(s))
-		require.Equal(t, enabled, s.TCPConnectionLogger != nil)
-		require.Nil(t, s.TrafficLogger)
+	previous := logger
+	t.Cleanup(func() { logger = previous })
+	for _, level := range []zap.AtomicLevel{zap.NewAtomicLevelAt(zap.InfoLevel), zap.NewAtomicLevelAt(zap.WarnLevel)} {
+		core, _ := observer.New(level)
+		logger = zap.New(core)
+		for _, enabled := range []bool{false, true} {
+			c := serverConfig{ConnectionAudit: enabled}
+			s := &server.Config{}
+			require.NoError(t, c.fillEventLogger(s))
+			require.Equal(t, enabled && level.Enabled(zap.InfoLevel), s.TCPConnectionLogger != nil)
+			require.Nil(t, s.TrafficLogger)
+		}
 	}
 }
 
@@ -26,7 +32,7 @@ func TestConnectionAuditMetadata(t *testing.T) {
 	defer func() { logger = old }()
 	core, logs := observer.New(zap.InfoLevel)
 	logger = zap.New(core)
-	l := &tcpConnectionLogger{}
+	l := &serverLogger{}
 	e := server.TCPConnectionEvent{ID: "flow", OpenedAt: time.Now(), ClientAddr: "[::1]:23456", LocalAddr: "127.0.0.1:34567", RemoteAddr: "127.0.0.1:443"}
 	l.LogTCPConnection(e, false, nil)
 	l.LogTCPConnection(e, true, nil)

@@ -8,9 +8,7 @@ import (
 	"github.com/apernet/hysteria/core/v2/server"
 )
 
-type tcpConnectionLogger struct{}
-
-func (*tcpConnectionLogger) LogTCPConnection(e server.TCPConnectionEvent, closed bool, err error) {
+func (*serverLogger) LogTCPConnection(e server.TCPConnectionEvent, closed bool, err error) {
 	event := "open"
 	duration := int64(0)
 	if closed {

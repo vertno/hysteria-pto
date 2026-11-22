@@ -333,11 +333,16 @@ func (h *h3sHandler) handleTCPRequest(stream *utils.QStream) {
 		event := TCPConnectionEvent{
 			ID: crand.Text(), OpenedAt: time.Now(),
 			ClientAddr: h.conn.RemoteAddr().String(), QUICLocalAddr: h.conn.LocalAddr().String(),
-			LocalAddr: tConn.LocalAddr().String(), RemoteAddr: tConn.RemoteAddr().String(),
 			QUICID: h.connID, StreamID: int64(stream.StreamID()),
 		}
+		event.setOutboundAddrs(tConn)
 		l.LogTCPConnection(event, false, nil)
-		defer func() { l.LogTCPConnection(event, true, err) }()
+		defer func() {
+			if event.LocalAddr == "" || event.RemoteAddr == "" {
+				event.setOutboundAddrs(tConn)
+			}
+			l.LogTCPConnection(event, true, err)
+		}()
 	}
 	if !hooked {
 		_ = protocol.WriteTCPResponse(stream, true, "Connected")

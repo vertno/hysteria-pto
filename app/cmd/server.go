@@ -1508,9 +1508,10 @@ func (c *serverConfig) fillAuthenticator(hyConfig *server.Config) error {
 }
 
 func (c *serverConfig) fillEventLogger(hyConfig *server.Config) error {
-	hyConfig.EventLogger = &serverLogger{}
-	if c.ConnectionAudit {
-		hyConfig.TCPConnectionLogger = &tcpConnectionLogger{}
+	l := &serverLogger{}
+	hyConfig.EventLogger = l
+	if c.ConnectionAudit && logger.Core().Enabled(zap.InfoLevel) {
+		hyConfig.TCPConnectionLogger = l
 	}
 	return nil
 }

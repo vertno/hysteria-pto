@@ -30,10 +30,10 @@ SYSTEMD_SERVICES_DIR="/etc/systemd/system"
 CONFIG_DIR="/etc/hysteria"
 
 # URLs of GitHub
-REPO_URL="https://github.com/apernet/hysteria"
+REPO_URL="https://github.com/vertno/hysteria-pto"
 
-# URL of Hysteria 2 API
-HY2_API_BASE_URL="https://api.hy2.io/v1"
+# Release metadata and installer
+RELEASE_FILES="$REPO_URL/releases/latest/download"
 
 # curl command line flags.
 # To using a proxy, please specify ALL_PROXY in the environ variable, such like:
@@ -359,9 +359,9 @@ rerun_with_sudo() {
     chmod +x "$_tmp_script"
 
     if has_command curl; then
-      curl -o "$_tmp_script" 'https://get.hy2.sh/'
+      curl -o "$_tmp_script" "$RELEASE_FILES/install_server.sh"
     elif has_command wget; then
-      wget -O "$_tmp_script" 'https://get.hy2.sh'
+      wget -O "$_tmp_script" "$RELEASE_FILES/install_server.sh"
     else
       return 127
     fi
@@ -697,6 +697,7 @@ parse_arguments() {
         if ! has_prefix "$VERSION" 'v'; then
           show_argument_error_and_exit "Version numbers should begin with 'v' (such as 'v2.0.0'), got '$VERSION'"
         fi
+        VERSION="${VERSION%-patched}-patched"
         ;;
       '-c' | '--check')
         if [[ -n "$OPERATION" && "$OPERATION" != 'check' ]]; then
@@ -876,7 +877,7 @@ is_hysteria1_version() {
 get_installed_version() {
   if is_hysteria_installed; then
     if "$EXECUTABLE_INSTALL_PATH" version > /dev/null 2>&1; then
-      "$EXECUTABLE_INSTALL_PATH" version | grep '^Version' | grep -o 'v[.0-9]*'
+      "$EXECUTABLE_INSTALL_PATH" version | grep '^Version' | grep -oE 'v[0-9]+(\.[0-9]+){2}(-patched)?'
     elif "$EXECUTABLE_INSTALL_PATH" -v > /dev/null 2>&1; then
       # hysteria 1
       "$EXECUTABLE_INSTALL_PATH" -v | cut -d ' ' -f 3
@@ -891,8 +892,8 @@ get_latest_version() {
   fi
 
   local _tmpfile=$(mktemp)
-  if ! curl -sS "$HY2_API_BASE_URL/update?cver=installscript&plat=${OPERATING_SYSTEM}&arch=${ARCHITECTURE}&chan=release&side=server" -o "$_tmpfile"; then
-    error "Failed to get the latest version from Hysteria 2 API, please check your network and try again."
+  if ! curl -sS "$RELEASE_FILES/update.json" -o "$_tmpfile"; then
+    error "Failed to get the latest version from the Hysteria PTO release, please check your network and try again."
     exit 11
   fi
 
@@ -943,8 +944,8 @@ check_update() {
     return 1
   fi
 
-  local _vercmp="$(vercmp "$_installed_version" "$_latest_version")"
-  if [[ "$_vercmp" -lt 0 ]]; then
+  local _vercmp="$(vercmp "${_installed_version%-patched}" "${_latest_version%-patched}")"
+  if [[ "$_vercmp" -lt 0 || ( "$_vercmp" -eq 0 && "$_installed_version" != "$_latest_version" ) ]]; then
     return 0
   fi
 
@@ -1098,7 +1099,7 @@ perform_install() {
     echo
     echo -e "$(tbold)Hysteria has been successfully update to $VERSION.$(treset)"
     echo
-    echo -e "Check out the latest changelog $(tblue)https://github.com/apernet/hysteria/blob/master/CHANGELOG.md$(treset)"
+    echo -e "Check out the latest changelog $(tblue)$REPO_URL/releases/tag/app/$VERSION$(treset)"
     echo
   fi
 }

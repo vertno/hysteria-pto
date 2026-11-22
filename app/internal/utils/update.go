@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"time"
 
+	"golang.org/x/mod/semver"
+
 	"github.com/apernet/hysteria/core/v2/client"
 )
 
 const (
-	updateCheckEndpoint = "https://api.hy2.io/v1/update"
+	updateCheckEndpoint = "https://github.com/vertno/hysteria-pto/releases/latest/download/update.json"
 	updateCheckTimeout  = 10 * time.Second
 )
 
@@ -70,16 +72,7 @@ type UpdateResponse struct {
 }
 
 func (uc *UpdateChecker) Check() (*UpdateResponse, error) {
-	url := fmt.Sprintf(
-		"%s?cver=%s&plat=%s&arch=%s&chan=%s&side=%s",
-		updateCheckEndpoint,
-		uc.CurrentVersion,
-		uc.Platform,
-		uc.Architecture,
-		uc.Channel,
-		uc.Side,
-	)
-	resp, err := uc.Client.Get(url)
+	resp, err := uc.Client.Get(updateCheckEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -93,5 +86,9 @@ func (uc *UpdateChecker) Check() (*UpdateResponse, error) {
 	if err := decoder.Decode(&uResp); err != nil {
 		return nil, err
 	}
+	if !semver.IsValid(uResp.LatestVersion) {
+		return nil, fmt.Errorf("invalid update version %q", uResp.LatestVersion)
+	}
+	uResp.HasUpdate = semver.IsValid(uc.CurrentVersion) && semver.Compare(uc.CurrentVersion, uResp.LatestVersion) < 0
 	return &uResp, nil
 }

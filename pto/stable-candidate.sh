@@ -1,55 +1,56 @@
 #!/usr/bin/env bash
-# Prepare a candidate locally on the Actions runner. This job has read access only.
 set -euo pipefail
 upstream=HyNetworks/hysteria
-stable=$(gh api --paginate --slurp "repos/$upstream/releases?per_page=100" |
-  jq -er '[.[][] | select(.draft == false and .prerelease == false) | .tag_name |
-    select(test("^app/v2\\.[0-9]+\\.[0-9]+$"))] | max_by(ltrimstr("app/v") | split(".") | map(tonumber)) // empty')
-tag="pto-${stable#app/}-1"
-released=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
-  jq -r --arg tag "$tag" 'any(.[][]; .tag_name == $tag and .draft == false and .prerelease == false)')
-echo "Official release: $stable. Downstream: $tag. Published: $released." >> "$GITHUB_STEP_SUMMARY"
-if [[ "$released" == true ]]; then
-    echo "build=false" >> "$GITHUB_OUTPUT"
+versions() { gh api --paginate --slurp "repos/$1/releases?per_page=100"; }
+published=$(versions "$GITHUB_REPOSITORY" | jq '[.[][] | select(.draft == false and .prerelease == false) | .tag_name]')
+# Begin at the release on which the fork adopted the -patched naming.
+stable=$(versions "$upstream" | jq -r --argjson published "$published" '
+    [.[][] | select(.draft == false and .prerelease == false and .published_at >= "2026-11-15T01:17:25Z")
+     | select(.tag_name | test("^app/v[0-9]+\\.[0-9]+\\.[0-9]+$"))
+     | select(.tag_name + "-patched" as $tag | $published | index($tag) == null)]
+    | sort_by(.published_at) | first.tag_name // empty')
+if [[ -z "$stable" ]]; then
+    echo 'Every official stable release is already published.' >> "$GITHUB_STEP_SUMMARY"
     heartbeat=refs/remotes/origin/automation/stable-check
     if ! git rev-parse --verify --quiet "$heartbeat" >/dev/null; then heartbeat=HEAD; fi
     if (( $(date +%s) - $(git show -s --format=%ct "$heartbeat") >= 35*86400 )); then
-        echo "heartbeat=true" >> "$GITHUB_OUTPUT"
+        echo 'heartbeat=true' >> "$GITHUB_OUTPUT"
     fi
     exit 0
 fi
 
-git fetch --no-tags origin refs/heads/pto
-base=$(git rev-parse FETCH_HEAD)
-git switch -C stable-candidate "$base"
-git fetch --no-tags "https://github.com/$upstream.git" "refs/tags/$stable:refs/tags/$stable"
-official=$(git rev-parse "$stable^{commit}")
+tag="$stable-patched"
+base=$(git rev-parse HEAD)
+git fetch --no-tags "https://github.com/$upstream.git" "refs/tags/$stable"
+official=$(git rev-parse "FETCH_HEAD^{commit}")
 git config user.name 'github-actions[bot]'
 git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 if git show-ref --verify --quiet "refs/tags/$tag"; then
-    # Resume a previous run (including an existing draft) using exactly the tagged source.
-    git switch --detach "$tag^{commit}"
-    git merge-base --is-ancestor HEAD "$base"
-elif ! git merge-base --is-ancestor "$official" HEAD; then
-    git merge --no-commit --no-ff "$official" || git rev-parse -q --verify MERGE_HEAD >/dev/null
-    # The fork owns its release machinery. Other merge conflicts require review.
+    git switch --detach "$tag^{commit}"  # Resume an interrupted draft at its original source.
+elif [[ "$(cat pto/upstream)" != "$official" ]]; then
+    # Replay just the fork's changes onto the exact release, including maintenance releases.
+    git diff --binary "$(cat pto/upstream)" "$base" -- . ':(exclude).github/workflows' ':(exclude)pto' > "$RUNNER_TEMP/fork.patch"
+    git switch --detach "$official"
+    git apply --3way --index "$RUNNER_TEMP/fork.patch"
     git restore --source="$base" --staged --worktree -- .github/workflows pto
-    if [[ -n "$(git ls-files --unmerged)" ]]; then git diff --name-only --diff-filter=U; exit 1; fi
-    # Retain the pinned compiler unless the new modules require a newer release.
-    required=$(awk '$1=="go" || $1=="toolchain" {sub(/^go/,"",$2); print $2}' go.work {app,core,extras}/go.mod |
-        grep -E '^[0-9]+\.[0-9]+(\.[0-9]+)?$' | sed -E '/^[0-9]+\.[0-9]+$/s/$/.0/' | sort -V | tail -1)
-    printf '%s\n' "$required" "$(cat pto/go-version)" | sort -V | tail -1 > "$RUNNER_TEMP/go-pin"
-    cp "$RUNNER_TEMP/go-pin" pto/go-version
-    git add pto/go-version
-    git commit -m "Merge official Hysteria $stable"
+    echo "$official" > pto/upstream
+    git add pto/upstream
+    source=$(git commit-tree "$(git write-tree)" -p "$base" -p "$official" -m "Follow official Hysteria $stable")
+    git switch -C stable-candidate "$source"
     git bundle create "$RUNNER_TEMP/candidate.bundle" refs/heads/stable-candidate "^$base"
 fi
-git merge-base --is-ancestor "$official" HEAD
+test "$(cat pto/upstream)" = "$official"
+latest=$(jq -nr --arg tag "$tag" --argjson published "$published" '
+    [$published[] | select(test("^app/v[0-9]+\\.[0-9]+\\.[0-9]+-patched$"))] + [$tag]
+    | max_by(ltrimstr("app/v") | rtrimstr("-patched") | split(".") | map(tonumber)) == $tag')
+echo "Building $tag from official commit $official." >> "$GITHUB_STEP_SUMMARY"
 {
     echo "build=true"
     echo "tag=$tag"
     echo "stable=$stable"
     echo "official=$official"
     echo "base=$base"
+    echo "latest=$latest"
     echo "commit=$(git rev-parse HEAD)"
 } >> "$GITHUB_OUTPUT"
+echo "HY_APP_VERSION=${tag#app/}" >> "$GITHUB_ENV"

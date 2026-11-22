@@ -13,7 +13,6 @@ func newMuxListener(listener net.Listener, deleteFunc func()) *muxListener {
 		base:       listener,
 		acceptChan: make(chan net.Conn),
 		closeChan:  make(chan struct{}),
-		updated:    make(chan struct{}, 1),
 		deleteFunc: deleteFunc,
 	}
 	go l.acceptLoop()
@@ -28,7 +27,6 @@ type muxListener struct {
 
 	acceptChan chan net.Conn
 	closeChan  chan struct{}
-	updated    chan struct{}
 
 	socksListener *subListener
 	httpListener  *subListener
@@ -88,9 +86,6 @@ func (l *muxListener) mainLoop() {
 		select {
 		case <-l.closeChan:
 			return
-		case <-l.updated:
-			// Refresh protocol close channels after a listener is registered.
-			continue
 		case conn, ok := <-l.acceptChan:
 			if !ok {
 				return
@@ -198,7 +193,6 @@ func (l *muxListener) ListenHTTP() (net.Listener, error) {
 
 	sl := newSubListener(l.getAndClearAcceptError, l.base.Addr)
 	l.httpListener = sl
-	l.notifyRegistration()
 	return sl, nil
 }
 
@@ -232,17 +226,7 @@ func (l *muxListener) ListenSOCKS() (net.Listener, error) {
 
 	sl := newSubListener(l.getAndClearAcceptError, l.base.Addr)
 	l.socksListener = sl
-	l.notifyRegistration()
 	return sl, nil
-}
-
-// Coalesce registrations. The manager re-reads both listeners under the lock,
-// so one queued notification is sufficient even if both protocols are added.
-func (l *muxListener) notifyRegistration() {
-	select {
-	case l.updated <- struct{}{}:
-	default:
-	}
 }
 
 func newSubListener(acceptErrorFunc func() error, addrFunc func() net.Addr) *subListener {
